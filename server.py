@@ -21,37 +21,16 @@ PORT = int(os.environ.get("PORT", "8770"))
 
 mcp = FastMCP("freshrss-mcp")
 
-_FRESHRSS_CONTEXT = {}
-
-# Store credentials from headers per-request
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-import contextvars
-
-_req_ctx = contextvars.ContextVar("freshrss_req", default={})
-
-
-async def _set_headers_from_request():
-    """Add to mcp app lifecycle -- not exposed, internal only."""
-    pass
-
-
-class _HeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        hdrs = {
-            "url": request.headers.get("x-freshrss-url", ""),
-            "username": request.headers.get("x-freshrss-username", ""),
-            "password": request.headers.get("x-freshrss-password", ""),
-        }
-        _req_ctx.set(hdrs)
-        return await call_next(request)
-
 
 def _resolve(url: str = "", username: str = "", password: str = ""):
-    hdrs = _req_ctx.get({})
-    u = url or hdrs.get("url", "")
-    un = username or hdrs.get("username", "")
-    pw = password or hdrs.get("password", "")
+    from fastmcp.server.dependencies import get_http_request
+    try:
+        hdrs = get_http_request().headers
+    except RuntimeError:
+        hdrs = {}
+    u = url or hdrs.get("x-freshrss-url", "")
+    un = username or hdrs.get("x-freshrss-username", "")
+    pw = password or hdrs.get("x-freshrss-password", "")
     if not u or not un or not pw:
         raise ValueError("Credentials required (params or x-freshrss-* headers)")
     return u, un, pw
@@ -270,7 +249,6 @@ def get_starred(
 
 def main():
     app = mcp.http_app(path="/mcp", stateless_http=True)
-    app.add_middleware(_HeadersMiddleware)
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=PORT)
 
