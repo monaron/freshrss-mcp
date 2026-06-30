@@ -1,5 +1,7 @@
 """
 FreshRSS MCP Server — Read RSS feeds via Google Reader compatible API.
+Credentials come from request headers (x-freshrss-url, x-freshrss-username, x-freshrss-password)
+or from explicit tool parameters.
 """
 import json
 import logging
@@ -18,6 +20,41 @@ logger = logging.getLogger("freshrss-mcp")
 PORT = int(os.environ.get("PORT", "8770"))
 
 mcp = FastMCP("freshrss-mcp")
+
+_FRESHRSS_CONTEXT = {}
+
+# Store credentials from headers per-request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import contextvars
+
+_req_ctx = contextvars.ContextVar("freshrss_req", default={})
+
+
+async def _set_headers_from_request():
+    """Add to mcp app lifecycle -- not exposed, internal only."""
+    pass
+
+
+class _HeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        hdrs = {
+            "url": request.headers.get("x-freshrss-url", ""),
+            "username": request.headers.get("x-freshrss-username", ""),
+            "password": request.headers.get("x-freshrss-password", ""),
+        }
+        _req_ctx.set(hdrs)
+        return await call_next(request)
+
+
+def _resolve(url: str = "", username: str = "", password: str = ""):
+    hdrs = _req_ctx.get({})
+    u = url or hdrs.get("url", "")
+    un = username or hdrs.get("username", "")
+    pw = password or hdrs.get("password", "")
+    if not u or not un or not pw:
+        raise ValueError("Credentials required (params or x-freshrss-* headers)")
+    return u, un, pw
 
 
 class FreshRSSClient:
@@ -153,19 +190,14 @@ def _first(val: Any) -> str:
 
 @mcp.tool()
 def list_feeds(
-    freshss_url: str,
-    freshss_username: str,
-    freshss_password: str,
+    freshss_url: str = "",
+    freshss_username: str = "",
+    freshss_password: str = "",
 ) -> Dict[str, Any]:
-    """List all subscribed RSS feeds.
-
-    Args:
-        freshss_url: FreshRSS base URL (e.g. https://rss.example.com/p/api/greader.php)
-        freshss_username: FreshRSS username
-        freshss_password: FreshRSS API password
-    """
+    """List all subscribed RSS feeds. Credentials come from headers or params."""
     try:
-        client = FreshRSSClient(freshss_url, freshss_username, freshss_password)
+        url, username, password = _resolve(freshss_url, freshss_username, freshss_password)
+        client = FreshRSSClient(url, username, password)
         feeds = client.list_feeds()
         return {"count": len(feeds), "feeds": feeds}
     except Exception as e:
@@ -174,25 +206,17 @@ def list_feeds(
 
 @mcp.tool()
 def get_articles(
-    freshss_url: str,
-    freshss_username: str,
-    freshss_password: str,
+    freshss_url: str = "",
+    freshss_username: str = "",
+    freshss_password: str = "",
     feed_title: Optional[str] = None,
     feed_id: Optional[str] = None,
     count: int = 20,
 ) -> Dict[str, Any]:
-    """Get articles from a feed, including full text content.
-
-    Args:
-        freshss_url: FreshRSS base URL
-        freshss_username: FreshRSS username
-        freshss_password: FreshRSS API password
-        feed_title: Feed name to search (e.g. "Hacker News")
-        feed_id: Exact feed ID (overrides feed_title)
-        count: Max articles (default 20)
-    """
+    """Get articles with full text from a feed. Credentials from headers or params."""
     try:
-        client = FreshRSSClient(freshss_url, freshss_username, freshss_password)
+        url, username, password = _resolve(freshss_url, freshss_username, freshss_password)
+        client = FreshRSSClient(url, username, password)
         if feed_id:
             fid = feed_id
         elif feed_title:
@@ -203,7 +227,6 @@ def get_articles(
             fid = match["id"]
         else:
             return {"error": "feed_title or feed_id required"}
-
         articles = client.get_articles(fid, count)
         return {"feed": feed_title or feed_id, "count": len(articles), "articles": articles}
     except Exception as e:
@@ -212,23 +235,16 @@ def get_articles(
 
 @mcp.tool()
 def search_articles(
-    freshss_url: str,
-    freshss_username: str,
-    freshss_password: str,
-    query: str,
+    freshss_url: str = "",
+    freshss_username: str = "",
+    freshss_password: str = "",
+    query: str = "",
     count: int = 20,
 ) -> Dict[str, Any]:
-    """Search across all feeds for articles matching keywords.
-
-    Args:
-        freshss_url: FreshRSS base URL
-        freshss_username: FreshRSS username
-        freshss_password: FreshRSS API password
-        query: Search keywords
-        count: Max results (default 20)
-    """
+    """Search across all feeds. Credentials from headers or params."""
     try:
-        client = FreshRSSClient(freshss_url, freshss_username, freshss_password)
+        url, username, password = _resolve(freshss_url, freshss_username, freshss_password)
+        client = FreshRSSClient(url, username, password)
         articles = client.search_articles(query, count)
         return {"query": query, "count": len(articles), "articles": articles}
     except Exception as e:
@@ -237,21 +253,15 @@ def search_articles(
 
 @mcp.tool()
 def get_starred(
-    freshss_url: str,
-    freshss_username: str,
-    freshss_password: str,
+    freshss_url: str = "",
+    freshss_username: str = "",
+    freshss_password: str = "",
     count: int = 50,
 ) -> Dict[str, Any]:
-    """Get starred/saved articles.
-
-    Args:
-        freshss_url: FreshRSS base URL
-        freshss_username: FreshRSS username
-        freshss_password: FreshRSS API password
-        count: Max articles (default 50)
-    """
+    """Get starred articles. Credentials from headers or params."""
     try:
-        client = FreshRSSClient(freshss_url, freshss_username, freshss_password)
+        url, username, password = _resolve(freshss_url, freshss_username, freshss_password)
+        client = FreshRSSClient(url, username, password)
         articles = client.get_starred(count)
         return {"count": len(articles), "articles": articles}
     except Exception as e:
@@ -259,8 +269,10 @@ def get_starred(
 
 
 def main():
-    logger.info(f"Starting FreshRSS MCP server on 0.0.0.0:{PORT}")
-    mcp.run(transport="http", host="0.0.0.0", port=PORT)
+    app = mcp.http_app(path="/mcp", stateless_http=True)
+    app.add_middleware(_HeadersMiddleware)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
 
 
 if __name__ == "__main__":
