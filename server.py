@@ -89,11 +89,11 @@ class FreshRSSClient:
         ids = self.get_article_ids(feed_id, count)
         if not ids:
             return []
-        body = json.dumps({"i": ids, "output": "json"}).encode()
+        body = urllib.parse.urlencode([("i", i) for i in ids] + [("output", "json")]).encode()
         url = f"{self.base_url}/reader/api/0/stream/items/contents"
         req = urllib.request.Request(
             url, data=body,
-            headers={"Authorization": f"GoogleLogin auth={self.auth_token}", "Content-Type": "application/json"},
+            headers={"Authorization": f"GoogleLogin auth={self.auth_token}", "Content-Type": "application/x-www-form-urlencoded"},
         )
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read())
@@ -126,11 +126,11 @@ class FreshRSSClient:
         if not item_ids:
             return []
         ids = item_ids[:count]
-        body = json.dumps({"i": ids, "output": "json"}).encode()
+        body = urllib.parse.urlencode([("i", i) for i in ids] + [("output", "json")]).encode()
         url = f"{self.base_url}/reader/api/0/stream/items/contents"
         req = urllib.request.Request(
             url, data=body,
-            headers={"Authorization": f"GoogleLogin auth={self.auth_token}", "Content-Type": "application/json"},
+            headers={"Authorization": f"GoogleLogin auth={self.auth_token}", "Content-Type": "application/x-www-form-urlencoded"},
         )
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read())
