@@ -26,8 +26,13 @@ def _resolve(url: str = "", username: str = "", password: str = ""):
     from fastmcp.server.dependencies import get_http_request
     try:
         hdrs = get_http_request().headers
+        logger.info("headers: url=%s user=%s pass=%s",
+                    hdrs.get("x-freshrss-url", "")[:40] or "(none)",
+                    hdrs.get("x-freshrss-username", "") or "(none)",
+                    "***" if hdrs.get("x-freshrss-password") else "(none)")
     except RuntimeError:
         hdrs = {}
+        logger.warning("get_http_request() failed")
     u = url or hdrs.get("x-freshrss-url", "")
     un = username or hdrs.get("x-freshrss-username", "")
     pw = password or hdrs.get("x-freshrss-password", "")
