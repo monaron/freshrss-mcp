@@ -109,39 +109,6 @@ class FreshRSSClient:
     def get_starred(self, count: int = 50) -> List[Dict]:
         return self.get_articles("user/-/state/com.google/starred", count)
 
-    def search_ids(self, query: str, count: int = 20) -> List[str]:
-        qs = f"q={urllib.parse.quote(query)}&n={count}&output=json"
-        data = self._api(f"search/items/ids?{qs}")
-        return [r.get("id", "") for r in data.get("results", [])]
-
-    def search_articles(self, query: str, count: int = 20) -> List[Dict]:
-        qs = f"q={urllib.parse.quote(query)}&n={count}&output=json"
-        data = self._api(f"search/items/ids?{qs}")
-        item_ids = [r.get("id", "") for r in data.get("results", [])]
-        if not item_ids:
-            return []
-        ids = item_ids[:count]
-        body = urllib.parse.urlencode([("i", i) for i in ids] + [("output", "json")]).encode()
-        url = f"{self.base_url}/reader/api/0/stream/items/contents"
-        req = urllib.request.Request(
-            url, data=body,
-            headers={"Authorization": f"GoogleLogin auth={self.auth_token}", "Content-Type": "application/x-www-form-urlencoded"},
-        )
-        with urllib.request.urlopen(req) as resp:
-            data = json.loads(resp.read())
-        result = []
-        for item in data.get("items", []):
-            result.append({
-                "id": item.get("id", ""),
-                "title": item.get("title", ""),
-                "published": datetime.fromtimestamp(int(item.get("published", 0))).isoformat(),
-                "summary": _strip_html(item.get("summary", {}).get("content", "")),
-                "content": _strip_html(item.get("content", {}).get("content", "")),
-                "url": _first(item.get("canonical", [])),
-                "author": item.get("author", ""),
-            })
-        return result
-
 
 def _strip_html(text: str) -> str:
     result = []
@@ -208,24 +175,6 @@ def get_articles(
             return {"error": "feed_title or feed_id required"}
         articles = client.get_articles(fid, count)
         return {"feed": feed_title or feed_id, "count": len(articles), "articles": articles}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@mcp.tool()
-def search_articles(
-    freshss_url: str = "",
-    freshss_username: str = "",
-    freshss_password: str = "",
-    query: str = "",
-    count: int = 20,
-) -> Dict[str, Any]:
-    """Search across all feeds. Credentials from headers or params."""
-    try:
-        url, username, password = _resolve(freshss_url, freshss_username, freshss_password)
-        client = FreshRSSClient(url, username, password)
-        articles = client.search_articles(query, count)
-        return {"query": query, "count": len(articles), "articles": articles}
     except Exception as e:
         return {"error": str(e)}
 
